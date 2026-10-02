@@ -1,7 +1,8 @@
 # Microsoft GameInput 强制停用 / 删除工具
 
 针对 `GameInputSvc` 服务的提权处置工具。**双击 `GameInputTool.exe` 即可**，程序会自动弹出 UAC 请求管理员权限。
-##由AI Agent生成，不保证绝对的可用性
+
+## 由AI Agent生成，不保证绝对的可用性
 
 ---
 
