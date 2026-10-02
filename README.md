@@ -1,42 +1,11 @@
 # Microsoft GameInput 强制停用 / 删除工具
 
 针对 `GameInputSvc` 服务的提权处置工具。**双击 `GameInputTool.exe` 即可**，程序会自动弹出 UAC 请求管理员权限。
+##由AI Agent生成，不保证绝对的可用性
 
 ---
 
-## 一、为什么这个服务"删不掉 / 老是回来"
-
-排查你机器上的实际状态后，找到**两个自动拉起机制**——这就是"关掉又自己回来"的直接原因：
-
-| 机制 | 位置 | 作用 |
-|---|---|---|
-| **TriggerInfo** | `HKLM\SYSTEM\CurrentControlSet\Services\GameInputSvc\TriggerInfo\0` | 触发器 `Type=7`（**设备接口到达**）。插上手柄 / 某个设备接口一出现，服务立刻被拉起 |
-| **FailureActions** | 同一服务键下 | 服务失败后**自动重启**（原值配置为 60 秒） |
-
-**只做 `sc stop` 或 `sc config start=disabled` 是不够的**——`Disabled` 只挡住"开机启动"，挡不住触发器拉起。必须把这两个机制摘掉。
-
-此外还发现 **0 字节"墓碑"文件**（同名路径被替换成空文件，属主 `BUILTIN\Administrators`，属性含未文档化的 `0x80000`）：
-
-- `C:\Program Files\Microsoft GameInput`
-- `C:\Program Files (x86)\Microsoft Gameinput`
-
-这类痕迹通常由安全软件（你机器上运行着**火绒** `HRWSCCtrl`）的文件保护 / 回滚机制产生。如果删掉后它们又冒出来，请查火绒的防护日志。
-
-### 关于 `C:\Windows\System32\GameInputSvc.exe`（按实际形态归类）
-
-服务主程序这个路径**有过两种形态**，所以程序不把它写死在任何一个列表里，而是运行时按大小判定：
-
-| 实际大小 | 判定 | 归属步骤 |
-|---|---|---|
-| **非 0 字节** | 正常的服务二进制（`WinSxS` 硬链接投影） | **步骤 4** 删除集 |
-| **0 字节** | 被安全软件替换成的墓碑 | **步骤 5** 清理集 |
-
-> 该文件曾是 0 字节墓碑，已用 `Repair-GameInputComponents.ps1` 修复为 55248 字节的正规硬链接（属主 `NT SERVICE\TrustedInstaller`，SDDL 与同组件参照文件一致）。
-> **不要**再把它当成墓碑——它是真实的服务二进制。上面表格的判定逻辑已覆盖这两种情况。
-
----
-
-## 二、用法
+## 一、用法
 
 ### 图形化操作（推荐）
 
@@ -66,7 +35,6 @@
 
 ### 命令行
 
-命令行方式完全保留，行为不变：
 
 ```
 GameInputTool.exe [模式] [选项]
@@ -119,34 +87,7 @@ GameInputTool.exe [模式] [选项]
 
 ---
 
-## 四、删除 DLL 的代价（`Full` / `Nuclear` 才涉及）
-
-删除以下文件会让**使用 GameInput API 的游戏失去对应支持**（多数游戏会回退到 XInput，通常仍能用，但不再享受新 API 的低延迟特性）：
-
-- `C:\Windows\System32\GameInput.dll`（109,552 字节）
-- `C:\Windows\System32\GameInputInbox.dll`（393,160 字节）
-- `C:\Windows\SysWOW64\GameInput.dll`（90,072 字节，32 位版本）
-- `C:\Windows\System32\GameInputSvc.exe`（55,248 字节，服务主程序；**仅当它是非 0 字节的真二进制时**才纳入删除）
-
-**这三个文件与 `WinSxS` 组件存储是硬链接关系**（`fsutil hardlink list` 各显示 2 个链接）：
-
-- 只删 `System32` 侧 → `WinSxS` 仍持有数据，程序无法被正常加载，但**可以回滚**
-- 连 `WinSxS` 一起删（`-IncludeWinSxS`）→ **不推荐**。`WinSxS` 是受保护的组件存储，单独删链接会让组件清单与实际文件不一致，导致 `sfc /scannow` 和 `DISM` 报错**且无法自动修复**
-
-所以默认行为是：**只删 `System32`/`SysWOW64` 侧，保留 `WinSxS` 作为可回滚副本**。同理，`WinSxS\Manifests` 下的 5 个组件清单也不会被删除，只会提示。
-
-### 权限问题
-
-这些 DLL 属主是 `NT SERVICE\TrustedInstaller`，`Administrators` 组只有读/执行权限（`0x1200a9`），**没有删除权限**。因此程序在删除失败时会自动执行：
-
-1. `takeown /F <路径> /A` → 取得所有权
-2. `icacls <路径> /grant *S-1-5-32-544:(F)` → 授予 Administrators 完全控制
-3. `attrib -R -S -H <路径>` → 清掉只读/系统/隐藏属性
-4. 重试删除；若文件被占用，则登记到 `PendingFileRenameOperations`，**重启后自动删除**
-
----
-
-## 五、回滚
+## 四、回滚
 
 `Soft` 模式随时可以恢复：
 
@@ -165,7 +106,7 @@ DLL 的回滚：因为默认保留了 `WinSxS` 副本，可执行 `sfc /scannow`
 
 ---
 
-## 六、文件清单
+## 五、文件清单
 
 | 文件 | 说明 |
 |---|---|
@@ -182,7 +123,7 @@ DLL 的回滚：因为默认保留了 `WinSxS` 副本，可执行 `sfc /scannow`
 | `logs\` | 每次运行的时间戳日志 |
 | `backup\` | 注册表导出备份 |
 
-### 重新编译
+### 六、编译
 
 无需 Visual Studio。窗口用了 WinForms，所以要**同时编译两个 `.cs`** 并额外引用两个程序集：
 
@@ -200,7 +141,7 @@ C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe `
 
 ---
 
-## 七、注意事项
+## 五、注意事项
 
 - **程序的"强制关闭"** = 先 `ControlService(STOP)` 温和停止并等待 15 秒；超时则通过 `SERVICE_STATUS_PROCESS.dwProcessId` 拿到宿主进程 PID 并 `Process.Kill()` 强杀。
 - 如果删除失败，**先临时关闭火绒的"文件实时监控"和"自我保护"**，再重试。
@@ -209,7 +150,7 @@ C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe `
 
 ---
 
-## 八、组件存储修复（可选，已完成）
+## 六、组件存储修复（可选，已完成）
 
 `Repair-GameInputComponents.ps1` 用于处理 `System32` 投影与 `WinSxS` 组件存储之间的不一致（投影被替换成 0 字节墓碑时）。**当前机器已修复完毕**，日常无需再跑。
 
@@ -238,8 +179,10 @@ C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe `
 | SDDL | 与同组件参照文件 `GameInputInbox.dll` **完全一致** |
 | 属性 | `0x20`（不再是墓碑的 `0x80020`） |
 
-修复脚本的两个关键实现细节（踩过的坑）：
+##许可证
 
-1. **属主必须整体套用 SDDL**，不能用 `AddAccessRule` 逐条合并——`AddAccessRule` 是**求并集**，若目标残留 `BU:FA`（完全控制）而参照是 `BU:0x1200a9`（读+执行），合并结果是 `FA`，**权限比原来更宽松**。正确做法是 `FileSecurity.SetSecurityDescriptorSddlForm($参照SDDL)` + `Set-Acl` 整体覆盖。
-2. **`.NET` 的 `Acl.SetOwner()` 不接受字符串**，传 `"NT SERVICE\TrustedInstaller"` 会抛 `IdentityReference` 转换异常；改用整体 SDDL 后这个问题一并消失（`icacls /setowner` 只在已提权时可用，`ERROR_INVALID_OWNER 1307` 是非提权下的必然结果）。
+[MIT](https://mit-license.org/)
 
+
+## 特别鸣谢
+[Deepseek](https://deepseek.com)
